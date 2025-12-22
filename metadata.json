@@ -1,0 +1,8 @@
+{
+  "name": "Vinci Auto-Editor",
+  "description": "An automated video editor for YouTube automation. Upload audio, images, and SRT files to automatically generate videos with transitions, layered elements, and customizable subtitles.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
