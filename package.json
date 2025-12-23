@@ -1,14 +1,12 @@
 {
   "name": "vinci-auto-editor-pro",
   "version": "1.0.0",
-  "description": "Professional Automated Video Editor for YouTube Automation",
-  "main": "build_temp/main.js",
+  "description": "Professional Automated Video Editor",
+  "main": "main.js",
   "scripts": {
     "start": "electron .",
     "build-exe": "electron-builder --win nsis"
   },
-  "author": "Chamandeep Singh",
-  "license": "MIT",
   "dependencies": {
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
@@ -21,22 +19,20 @@
   "build": {
     "appId": "com.vinci.autoeditor",
     "productName": "VinciAutoEditor",
-    "directories": {
-      "output": "dist"
-    },
+    "asar": true,
     "win": {
       "target": "nsis",
       "requestedExecutionLevel": "asInvoker"
     },
-    "nsis": {
-      "oneClick": true,
-      "allowToChangeInstallationDirectory": false,
-      "createDesktopShortcut": true,
-      "shortcutName": "Vinci Auto-Editor"
+    "directories": {
+      "output": "dist"
     },
     "files": [
-      "build_temp/**/*",
-      "node_modules/**/*"
+      "index.html",
+      "bundle.js",
+      "main.js",
+      "package.json",
+      "manifest.json"
     ]
   }
 }

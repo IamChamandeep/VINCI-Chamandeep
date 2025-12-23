@@ -1,13 +1,13 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { ProjectState, Subtitle, Asset } from '../types';
 
 interface PreviewAreaProps {
   state: ProjectState;
   totalDuration: number;
+  onTogglePlay: () => void;
 }
 
-const PreviewArea: React.FC<PreviewAreaProps> = ({ state, totalDuration }) => {
+const PreviewArea: React.FC<PreviewAreaProps> = ({ state, totalDuration, onTogglePlay }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [activeSubtitle, setActiveSubtitle] = useState<Subtitle | null>(null);
   const imageCache = useRef<Map<string, HTMLImageElement>>(new Map());
@@ -51,6 +51,7 @@ const PreviewArea: React.FC<PreviewAreaProps> = ({ state, totalDuration }) => {
         time: state.currentTime, 
         wall: performance.now() 
     };
+    // Precision during rendering: strictly follow the state's time
     if (state.isRendering || !state.isPlaying) {
         setSmoothTime(state.currentTime);
     }
@@ -60,6 +61,7 @@ const PreviewArea: React.FC<PreviewAreaProps> = ({ state, totalDuration }) => {
     let frameId: number;
     const updateSmoothTime = () => {
       if (state.isRendering) {
+          // Manual sync with export loop
           setSmoothTime(state.currentTime);
       } else if (state.isPlaying) {
         const now = performance.now();
@@ -386,25 +388,41 @@ const PreviewArea: React.FC<PreviewAreaProps> = ({ state, totalDuration }) => {
   }, [smoothTime, state.images, activeSubtitle, state.subtitleSettings, state.overlays, totalDuration, state.isRendering]);
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center relative p-6 overflow-hidden min-h-0">
-      <div className="relative liquid-glass rounded-[40px] p-2 shadow-[0_40px_100px_rgba(0,0,0,0.6)] max-h-full max-w-full flex items-center justify-center">
-        <div className="rounded-[32px] overflow-hidden bg-black aspect-video w-full max-h-full border border-white/5 relative flex items-center justify-center">
+    <div className="flex-1 flex flex-col items-center justify-center relative p-12">
+      <div className="relative liquid-glass rounded-[40px] p-2 shadow-[0_40px_100px_rgba(0,0,0,0.6)]">
+        <div className="rounded-[32px] overflow-hidden bg-black aspect-video max-h-[65vh] w-auto border border-white/5 relative">
           <canvas 
             ref={canvasRef} width={1920} height={1080} 
             className="w-full h-full block object-contain"
           />
           {!state.audio && !state.images.length && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-6">
-                  <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
-                    <i className="fas fa-clapperboard text-3xl text-white/20"></i>
+                  <div className="w-24 h-24 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
+                    <i className="fas fa-clapperboard text-4xl text-white/20"></i>
                   </div>
                   <div className="text-center">
-                    <p className="text-base font-black tracking-tight text-white/40">VINCI WORKSPACE</p>
-                    <p className="text-[8px] uppercase tracking-[0.4em] text-white/20 font-bold mt-1">Ready for Import</p>
+                    <p className="text-lg font-black tracking-tight text-white/60">Creative Workspace</p>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 font-bold mt-1">Import Assets to Begin</p>
                   </div>
               </div>
           )}
         </div>
+      </div>
+      
+      <div className="mt-12 flex items-center gap-10 liquid-glass px-10 py-5 rounded-full border border-white/5 shadow-2xl">
+        <button className="text-zinc-500 hover:text-white transition-all text-xl" onClick={onTogglePlay} disabled={state.isRendering}>
+            <i className="fas fa-backward-step"></i>
+        </button>
+        <button 
+            className="w-16 h-16 bg-white text-black rounded-full flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-[0_10px_30px_rgba(255,255,255,0.3)] disabled:opacity-50"
+            onClick={onTogglePlay}
+            disabled={state.isRendering}
+        >
+            <i className={`fas ${state.isPlaying ? 'fa-pause' : 'fa-play'} text-2xl ${state.isPlaying ? '' : 'ml-1'}`}></i>
+        </button>
+        <button className="text-zinc-500 hover:text-white transition-all text-xl" onClick={onTogglePlay} disabled={state.isRendering}>
+            <i className="fas fa-forward-step"></i>
+        </button>
       </div>
     </div>
   );

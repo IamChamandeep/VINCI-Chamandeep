@@ -14,8 +14,12 @@ const RenderModal: React.FC<RenderModalProps> = ({ onConfirm, onClose }) => {
   const [mp4Supported, setMp4Supported] = useState(false);
 
   useEffect(() => {
+    // Check for MP4 support but default to trying it anyway
     if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
-      setMp4Supported(MediaRecorder.isTypeSupported('video/mp4;codecs=avc1'));
+      const supported = MediaRecorder.isTypeSupported('video/mp4') || MediaRecorder.isTypeSupported('video/mp4;codecs=avc1');
+      setMp4Supported(supported);
+      // Force MP4 as default
+      setFormat('mp4');
     }
   }, []);
 
@@ -33,7 +37,7 @@ const RenderModal: React.FC<RenderModalProps> = ({ onConfirm, onClose }) => {
       filename,
       fps,
       bitrate: getBitrate(),
-      format: format === 'mp4' && mp4Supported ? 'mp4' : 'webm'
+      format: format
     });
   };
 
@@ -53,7 +57,7 @@ const RenderModal: React.FC<RenderModalProps> = ({ onConfirm, onClose }) => {
               </span>
               Export Hub
             </h2>
-            <p className="text-[10px] text-white/30 mt-2 uppercase tracking-[0.4em] font-black">High Fidelity Media Encoder</p>
+            <p className="text-[10px] text-white/30 mt-2 uppercase tracking-[0.4em] font-black">Professional Media Encoder</p>
           </div>
           <button onClick={onClose} className="w-12 h-12 rounded-full liquid-button text-white/20 hover:text-white transition-colors">
             <i className="fas fa-times text-lg"></i>
@@ -72,7 +76,7 @@ const RenderModal: React.FC<RenderModalProps> = ({ onConfirm, onClose }) => {
                 className="flex-1 bg-transparent px-8 py-5 text-sm outline-none font-black tracking-tight"
               />
               <div className="px-8 py-5 text-[10px] font-black text-[#00A3FF] uppercase tracking-widest bg-white/[0.03] border-l border-white/5">
-                .{format}
+                .MP4
               </div>
             </div>
           </div>
@@ -81,20 +85,13 @@ const RenderModal: React.FC<RenderModalProps> = ({ onConfirm, onClose }) => {
             {/* Format & FPS */}
             <div className="space-y-8">
                <div className="space-y-4">
-                <label className="text-[10px] text-white/20 uppercase font-black tracking-[0.3em] px-2">Codec</label>
-                <div className="grid grid-cols-2 gap-3 p-1.5 liquid-button rounded-[24px]">
+                <label className="text-[10px] text-white/20 uppercase font-black tracking-[0.3em] px-2">Output Container</label>
+                <div className="flex p-1.5 liquid-button rounded-[24px]">
                   <button 
-                    onClick={() => setFormat('mp4')}
-                    disabled={!mp4Supported}
-                    className={`py-3.5 rounded-[18px] text-[10px] font-black tracking-[0.1em] transition-all ${format === 'mp4' ? 'bg-white text-black shadow-xl' : 'text-white/40'} disabled:opacity-20`}
+                    disabled
+                    className="flex-1 py-3.5 rounded-[18px] text-[10px] font-black tracking-[0.1em] transition-all bg-white text-black shadow-xl"
                   >
-                    MP4
-                  </button>
-                  <button 
-                    onClick={() => setFormat('webm')}
-                    className={`py-3.5 rounded-[18px] text-[10px] font-black tracking-[0.1em] transition-all ${format === 'webm' ? 'bg-white text-black shadow-xl' : 'text-white/40'}`}
-                  >
-                    WEBM
+                    MP4 (H.264)
                   </button>
                 </div>
               </div>
@@ -118,7 +115,7 @@ const RenderModal: React.FC<RenderModalProps> = ({ onConfirm, onClose }) => {
             {/* Quality */}
             <div className="space-y-8">
               <div className="space-y-4">
-                <label className="text-[10px] text-white/20 uppercase font-black tracking-[0.3em] px-2">Chroma Depth</label>
+                <label className="text-[10px] text-white/20 uppercase font-black tracking-[0.3em] px-2">Mastering Depth</label>
                 <div className="space-y-3">
                   {[
                     { id: 'ultra', label: 'ULTRA HD', bit: '25 Mbps' },
@@ -141,10 +138,10 @@ const RenderModal: React.FC<RenderModalProps> = ({ onConfirm, onClose }) => {
 
           <div className="bg-[#00A3FF]/5 border border-[#00A3FF]/10 rounded-3xl p-6 flex gap-6 items-center">
              <div className="w-12 h-12 rounded-2xl liquid-button flex items-center justify-center text-[#00A3FF] shrink-0">
-                <i className="fas fa-info-circle text-lg"></i>
+                <i className="fas fa-music text-lg"></i>
              </div>
              <p className="text-[10px] text-white/40 leading-relaxed font-bold uppercase tracking-wider">
-               Export resolution is fixed at <span className="text-white/80">1080p Full HD</span>. Keep the active tab focused for perfect frame pacing.
+               Synchronized <span className="text-white/80">Audio Mastering</span> enabled. MP4 format ensures high compatibility for YouTube & Reels.
              </p>
           </div>
         </div>
@@ -154,7 +151,7 @@ const RenderModal: React.FC<RenderModalProps> = ({ onConfirm, onClose }) => {
             onClick={onClose}
             className="flex-1 py-6 rounded-[28px] liquid-button text-[11px] font-black tracking-[0.3em] uppercase text-white/40"
           >
-            Abort
+            Cancel
           </button>
           <button 
             onClick={handleStart}

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import PreviewArea from './components/PreviewArea';
@@ -44,11 +45,10 @@ const App: React.FC = () => {
 
   const [totalDuration, setTotalDuration] = useState(0);
   const [isRenderModalOpen, setIsRenderModalOpen] = useState(false);
-  const [renderSettings, setRenderSettings] = useState<RenderSettings | null>(null);
   const [renderProgress, setRenderProgress] = useState(0);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(true);
 
   const audioObjRef = useRef<HTMLAudioElement | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -56,7 +56,6 @@ const App: React.FC = () => {
   const renderDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
 
-  // For Deterministic Background Rendering
   const isStopRequested = useRef(false);
 
   useEffect(() => {
@@ -65,7 +64,7 @@ const App: React.FC = () => {
 
     const handlePlayState = async () => {
       if (state.isRendering) {
-          audio.pause();
+          if (audio.paused) audio.play().catch(e => console.error("Audio resume failed", e));
           return;
       }
 
@@ -172,128 +171,208 @@ const App: React.FC = () => {
     });
   };
 
+  const handleReset = () => {
+    if (audioObjRef.current) {
+      audioObjRef.current.pause();
+      audioObjRef.current.src = '';
+      audioObjRef.current = null;
+    }
+    setTotalDuration(0);
+    setState({
+      audio: null,
+      images: [],
+      backgroundVideos: [],
+      overlays: [],
+      subtitles: [],
+      subtitleSettings: INITIAL_DEFAULTS,
+      currentTime: 0,
+      isPlaying: false,
+      isRendering: false
+    });
+  };
+
   const startRendering = async (settings: RenderSettings) => {
     if (!state.audio || !audioObjRef.current) return;
     
     isStopRequested.current = false;
-    setRenderSettings(settings);
+    setRenderProgress(0);
     setIsRenderModalOpen(false);
     
     const canvas = document.querySelector('canvas');
     if (!canvas) return;
 
     setState(prev => ({ ...prev, isRendering: true, isPlaying: false, currentTime: 0 }));
-    setRenderProgress(0);
 
-    const stream = canvas.captureStream(0); 
-    const recorder = new MediaRecorder(stream, {
-      mimeType: settings.format === 'mp4' ? 'video/x-matroska;codecs=avc1' : 'video/webm;codecs=vp9',
+    if (audioCtxRef.current?.state === 'suspended') {
+        await audioCtxRef.current.resume();
+    }
+
+    if (localGainRef.current) {
+        localGainRef.current.gain.setTargetAtTime(0, audioCtxRef.current!.currentTime, 0.01);
+    }
+
+    const canvasStream = canvas.captureStream(settings.fps);
+    const audioStream = renderDestRef.current ? renderDestRef.current.stream : new MediaStream();
+
+    const tracks = [
+        ...canvasStream.getVideoTracks(),
+        ...audioStream.getAudioTracks()
+    ];
+    
+    const combinedStream = new MediaStream(tracks);
+    const recorder = new MediaRecorder(combinedStream, {
+      mimeType: MediaRecorder.isTypeSupported('video/mp4;codecs=avc1') ? 'video/mp4;codecs=avc1' : 'video/webm;codecs=vp9',
       videoBitsPerSecond: settings.bitrate
     });
 
     chunksRef.current = [];
-    recorder.ondataavailable = e => chunksRef.current.push(e.data);
+    recorder.ondataavailable = e => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+    };
+
     recorder.onstop = () => {
+      if (chunksRef.current.length === 0) {
+          alert("Production Error: No data captured.");
+          setState(prev => ({ ...prev, isRendering: false }));
+          return;
+      }
+      
       const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `${settings.filename}.${settings.format}`;
+      
+      // Filename construction
+      const extension = recorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+      a.download = `${settings.filename}.${extension}`;
+      
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
+      
+      if (localGainRef.current) {
+          localGainRef.current.gain.setTargetAtTime(1, audioCtxRef.current!.currentTime, 0.1);
+      }
       setState(prev => ({ ...prev, isRendering: false }));
     };
 
-    recorder.start();
+    await new Promise(r => setTimeout(r, 1000));
+    recorder.start(1000); 
 
-    const fps = settings.fps;
-    const frameTime = 1 / fps;
-    let renderTime = 0;
-
-    /**
-     * TIGHT RENDERING LOOP
-     * We use a while loop with a tiny timeout instead of requestAnimationFrame.
-     * Browsers throttle requestAnimationFrame heavily in background tabs, 
-     * but async loops with minimal yield stay active much longer.
-     */
-    const runExport = async () => {
-      while (renderTime <= totalDuration && !isStopRequested.current) {
-        // Step 1: Update current time state
-        setState(prev => ({ ...prev, currentTime: renderTime }));
-        setRenderProgress((renderTime / totalDuration) * 100);
-
-        // Step 2: Yield control to let the browser draw the frame
-        // We use a small delay which is more resilient to background throttling than RAF
-        await new Promise(r => setTimeout(r, 4)); 
-
-        // Step 3: Advance time
-        renderTime += frameTime;
-      }
-      
-      recorder.stop();
+    const runProduction = async () => {
+      const audio = audioObjRef.current!;
+      audio.currentTime = 0;
+      try { await audio.play(); } catch (e) { console.error(e); }
+      const startTime = performance.now();
+      const productionInterval = setInterval(() => {
+        if (isStopRequested.current) {
+            clearInterval(productionInterval);
+            audio.pause();
+            recorder.stop();
+            return;
+        }
+        const elapsed = (performance.now() - startTime) / 1000;
+        const currentPos = (audio.currentTime > 0) ? audio.currentTime : elapsed;
+        if (currentPos >= totalDuration || audio.ended) {
+            clearInterval(productionInterval);
+            audio.pause();
+            setTimeout(() => recorder.stop(), 2000); 
+            return;
+        }
+        setState(prev => ({ ...prev, currentTime: currentPos }));
+        setRenderProgress(Math.min((currentPos / totalDuration) * 100, 99.9));
+      }, 1000 / (settings.fps * 1.2));
     };
 
-    runExport();
+    runProduction();
   };
 
   const cancelRendering = () => {
     isStopRequested.current = true;
+    if (audioObjRef.current) audioObjRef.current.pause();
     setState(prev => ({ ...prev, isRendering: false, isPlaying: false }));
   };
 
   return (
-    <div className="flex h-screen w-full bg-zinc-950 text-zinc-100 selection:bg-blue-500/30 font-sans">
+    <div className="flex h-screen w-full bg-[#020205] text-zinc-100 selection:bg-blue-500/30 font-sans overflow-hidden">
       <Sidebar 
         assets={{ audio: state.audio, images: state.images, videos: state.backgroundVideos, overlays: state.overlays }} 
         onUpload={handleUpload}
         onRemove={handleRemove}
+        onReset={handleReset}
         autoStretch={state.subtitleSettings.autoStretch || false}
         onToggleStretch={(val) => setState(p => ({ ...p, subtitleSettings: { ...p.subtitleSettings, autoStretch: val } }))}
         onRender={() => setIsRenderModalOpen(true)}
         isRendering={state.isRendering}
       />
       
-      <main className="flex-1 flex flex-col min-w-0 relative">
-        <div className="flex-1 relative overflow-hidden flex flex-col">
-            <PreviewArea state={state} totalDuration={totalDuration} onTogglePlay={() => setState(p => ({...p, isPlaying: !p.isPlaying}))} />
+      <main className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden">
+        {/* PREVIEW CONTAINER - Uses min-h-0 to be strictly sized by flex and prevent hiding behind timeline */}
+        <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden">
+            <PreviewArea state={state} totalDuration={totalDuration} />
             
             {state.isRendering && (
               <div className="absolute inset-0 z-50 bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center p-12 animate-in fade-in duration-500">
-                <div className="w-full max-w-xl space-y-10">
+                <div className="w-full max-w-xl space-y-12">
                   <div className="space-y-4 text-center">
-                    <div className="inline-flex items-center gap-3 px-4 py-1.5 bg-blue-600/10 border border-blue-500/20 rounded-full">
-                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.8)]"></div>
-                        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400">Deterministic Engine v2</span>
+                    <div className="inline-flex items-center gap-3 px-4 py-1.5 bg-[#00A3FF]/10 border border-[#00A3FF]/20 rounded-full">
+                        <div className="w-2 h-2 bg-[#00A3FF] rounded-full animate-pulse shadow-[0_0_12px_rgba(0,163,255,1)]"></div>
+                        <span className="text-[10px] font-black uppercase tracking-[0.4em] text-[#00A3FF]">Background Mastering Active</span>
                     </div>
-                    <h3 className="text-4xl font-black tracking-tight text-white">Advanced Mastering</h3>
-                    <p className="text-zinc-500 text-sm font-medium">Bypassing browser throttling... Using full GPU power.</p>
+                    <h3 className="text-4xl font-black tracking-tight text-white uppercase italic">Turbo Render Active</h3>
+                    <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.2em] opacity-60 italic">Processing Master Files...</p>
                   </div>
 
                   <div className="relative pt-2">
-                    <div className="flex items-center justify-between mb-3 px-1 text-white">
-                      <span className="text-xs font-bold uppercase tracking-widest">Mastering Progress</span>
-                      <span className="text-4xl font-black tabular-nums">{Math.floor(renderProgress)}%</span>
+                    <div className="flex items-center justify-between mb-4 px-1 text-white">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-[#BF00FF]">Production Buffer</span>
+                        <span className="text-4xl font-black tabular-nums">{Math.floor(renderProgress)}%</span>
+                      </div>
                     </div>
-                    <div className="h-4 bg-zinc-800/50 rounded-full overflow-hidden border border-zinc-700/50 p-1">
-                      <div className="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-400 rounded-full transition-all duration-300 shadow-[0_0_20px_rgba(59,130,246,0.4)]" style={{ width: `${renderProgress}%` }} />
+                    <div className="h-5 bg-zinc-900 rounded-full overflow-hidden border border-white/5 p-1">
+                      <div className="h-full bg-gradient-to-r from-[#00A3FF] via-[#BF00FF] to-[#00A3FF] bg-[length:200%_100%] animate-[gradient_2s_linear_infinite] rounded-full transition-all duration-300" style={{ width: `${renderProgress}%` }} />
                     </div>
                   </div>
 
-                  <div className="flex flex-col items-center gap-8">
-                    <button onClick={cancelRendering} className="px-10 py-4 bg-zinc-900 hover:bg-red-600/10 hover:text-red-500 hover:border-red-500/30 border border-zinc-800 rounded-2xl text-xs font-black transition-all active:scale-95 flex items-center gap-3">
-                      <i className="fas fa-ban opacity-50"></i> STOP PRODUCTION
-                    </button>
-                  </div>
+                  <button onClick={cancelRendering} className="mx-auto px-10 py-5 bg-zinc-900 hover:bg-red-600/10 hover:text-red-500 border border-white/5 rounded-3xl text-[10px] font-black uppercase tracking-[0.3em] transition-all flex items-center gap-4">
+                    <i className="fas fa-power-off opacity-40"></i> Kill Thread
+                  </button>
                 </div>
               </div>
             )}
 
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur px-4 py-1.5 rounded-full border border-white/20 text-[10px] uppercase tracking-widest font-bold text-white z-10">
-                {state.isRendering ? '🟠 PROCESSING ASSETS' : (state.isPlaying ? '🔴 LIVE STREAM' : '⏸ IDLE')}
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur px-4 py-1.5 rounded-full border border-white/20 text-[10px] uppercase tracking-widest font-bold text-white z-10 flex items-center gap-3">
+                {state.isRendering && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>}
+                {state.isRendering ? '🟠 TURBO ENGINE ENGAGED' : (state.isPlaying ? '🔴 LIVE STREAM' : '⏸ IDLE')}
             </div>
+
+            {/* COLLAPSE TOGGLE BUTTON */}
+            <button 
+              onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+              className={`absolute top-1/2 right-0 -translate-y-1/2 z-40 w-10 h-24 liquid-glass border border-white/10 border-r-0 rounded-l-3xl flex items-center justify-center text-white/40 hover:text-white transition-all shadow-xl group ${!isSettingsOpen ? 'translate-x-0' : 'translate-x-[2px]'}`}
+              title={isSettingsOpen ? "Collapse Settings" : "Expand Settings"}
+            >
+              <i className={`fas fa-chevron-${isSettingsOpen ? 'right' : 'left'} text-sm group-hover:scale-125 transition-transform`}></i>
+            </button>
         </div>
-        <Timeline state={state} totalDuration={totalDuration} onSeek={t => !state.isRendering && setState(s => ({...s, currentTime: t}))} />
+
+        {/* TIMELINE - Strictly positioned below the preview */}
+        <div className="shrink-0 h-60">
+          <Timeline 
+            state={state} 
+            totalDuration={totalDuration} 
+            onSeek={t => !state.isRendering && setState(s => ({...s, currentTime: t}))} 
+            onTogglePlay={() => setState(p => ({...p, isPlaying: !p.isPlaying}))}
+          />
+        </div>
       </main>
 
-      <SettingsPanel settings={state.subtitleSettings} onChange={s => setState(p => ({ ...p, subtitleSettings: s }))} />
+      {/* COLLAPSIBLE SIDEBAR */}
+      <div className={`transition-all duration-500 ease-in-out h-full overflow-hidden ${isSettingsOpen ? 'w-[400px] opacity-100' : 'w-0 opacity-0 pointer-events-none'}`}>
+        <div className="w-[400px] h-full">
+          <SettingsPanel settings={state.subtitleSettings} onChange={s => setState(p => ({ ...p, subtitleSettings: s }))} />
+        </div>
+      </div>
 
       {isRenderModalOpen && (
         <RenderModal onConfirm={startRendering} onClose={() => setIsRenderModalOpen(false)} />

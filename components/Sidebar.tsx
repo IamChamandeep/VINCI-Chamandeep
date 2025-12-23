@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React from 'react';
 import { Asset, AssetType } from '../types';
 
 interface SidebarProps {
@@ -10,13 +11,25 @@ interface SidebarProps {
   };
   onUpload: (type: AssetType, file: File) => void;
   onRemove: (type: AssetType, id: string) => void;
+  onReset: () => void;
   autoStretch: boolean;
   onToggleStretch: (val: boolean) => void;
   onRender: () => void;
   isRendering: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ assets, onUpload, onRemove, autoStretch, onToggleStretch, onRender, isRendering }) => {
+const Sidebar: React.FC<SidebarProps> = ({ assets, onUpload, onRemove, onReset, autoStretch, onToggleStretch, onRender, isRendering }) => {
+  
+  const spawnNewInstance = () => {
+    // Check if running inside Electron
+    if (window && (window as any).require) {
+      const { ipcRenderer } = (window as any).require('electron');
+      ipcRenderer.send('spawn-new-instance');
+    } else {
+      window.open(window.location.href, '_blank');
+    }
+  };
+
   const handleFileChange = (type: AssetType) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) onUpload(type, file);
@@ -24,17 +37,36 @@ const Sidebar: React.FC<SidebarProps> = ({ assets, onUpload, onRemove, autoStret
 
   return (
     <div className="w-80 liquid-glass flex flex-col z-20">
-      <div className="p-8 border-b border-white/20 bg-white/[0.02]">
-        <div className="flex flex-col">
-          <h1 className="text-2xl font-black tracking-tighter flex items-center gap-3">
-            <span className="bg-gradient-to-tr from-[#00A3FF] to-[#BF00FF] bg-clip-text text-transparent">VINCI</span>
-            <span className="font-light text-white">AUTO</span>
-          </h1>
-          <p className="text-[9px] uppercase tracking-[0.4em] font-black text-white/80 mt-1.5 flex items-center gap-2">
-            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse shadow-[0_0_8px_#00A3FF]"></span>
-            Made by Chamandeep
-          </p>
+      <div className="p-8 border-b border-white/20 bg-white/[0.02] space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col">
+            <h1 className="text-2xl font-black tracking-tighter flex items-center gap-3">
+              <span className="bg-gradient-to-tr from-[#00A3FF] to-[#BF00FF] bg-clip-text text-transparent">VINCI</span>
+              <span className="font-light text-white">AUTO</span>
+            </h1>
+            <p className="text-[9px] uppercase tracking-[0.4em] font-black text-white/80 mt-1.5 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse shadow-[0_0_8px_#00A3FF]"></span>
+              MADE BY CHAMANDEEP
+            </p>
+          </div>
+          
+          <button 
+            onClick={onReset}
+            title="Reset Workspace"
+            className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-red-500/20 hover:border-red-500/40 hover:text-red-500 transition-all active:scale-90 group"
+          >
+            <i className="fas fa-rotate-left text-xs opacity-60 group-hover:opacity-100"></i>
+          </button>
         </div>
+
+        {/* Multi-Instance Control */}
+        <button 
+          onClick={spawnNewInstance}
+          className="w-full py-3 bg-[#BF00FF]/10 hover:bg-[#BF00FF]/20 border border-[#BF00FF]/30 rounded-2xl flex items-center justify-center gap-3 transition-all group"
+        >
+          <i className="fas fa-clone text-[#BF00FF] text-xs group-hover:scale-125 transition-transform"></i>
+          <span className="text-[10px] font-black uppercase tracking-widest text-[#BF00FF]">Spawn Clone Instance</span>
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 space-y-7 custom-scrollbar">

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { SubtitleSettings, VisualEffectType, EffectSlot } from '../types';
 
@@ -43,13 +44,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange }) => 
   ];
 
   return (
-    <div className="w-85 liquid-glass p-8 flex flex-col gap-8 overflow-y-auto z-20 custom-scrollbar">
+    <div className="w-full h-full liquid-glass p-8 flex flex-col gap-8 overflow-y-auto custom-scrollbar border-l border-white/10">
       <div className="flex items-center gap-5 mb-2">
-        <div className="w-12 h-12 rounded-[18px] liquid-button flex items-center justify-center text-[#00A3FF] shadow-[0_10px_30px_rgba(0,163,255,0.3)]">
+        <div className="w-12 h-12 rounded-[18px] liquid-button flex items-center justify-center text-[#00A3FF] shadow-[0_10px_30px_rgba(0,163,255,0.3)] shrink-0">
             <i className="fas fa-bolt text-xl"></i>
         </div>
-        <div>
-          <h2 className="text-sm font-black uppercase tracking-[0.3em] text-white">
+        <div className="min-w-0">
+          <h2 className="text-sm font-black uppercase tracking-[0.3em] text-white truncate">
             Vinci Studio
           </h2>
           <p className="text-[9px] font-black text-white/70 uppercase tracking-[0.4em]">Engine v2.5.0</p>
@@ -152,25 +153,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange }) => 
                </button>
              ))}
            </div>
-        </div>
-
-        <div className="flex gap-4">
-          <button 
-            onClick={() => update('fontWeight', settings.fontWeight === 'bold' ? 'normal' : 'bold')}
-            className={`flex-1 py-4 rounded-[20px] liquid-button text-[10px] font-black uppercase tracking-[0.3em] transition-all border-white/20 ${
-              settings.fontWeight === 'bold' ? 'bg-white text-black border-white shadow-[0_0_25px_rgba(255,255,255,0.5)]' : 'text-white/80'
-            }`}
-          >
-            Bold
-          </button>
-          <button 
-            onClick={() => update('fontStyle', settings.fontStyle === 'italic' ? 'normal' : 'italic')}
-            className={`flex-1 py-4 rounded-[20px] liquid-button text-[10px] italic font-black uppercase tracking-[0.3em] transition-all border-white/20 ${
-              settings.fontStyle === 'italic' ? 'bg-white text-black border-white shadow-[0_0_25px_rgba(255,255,255,0.5)]' : 'text-white/80'
-            }`}
-          >
-            Italic
-          </button>
         </div>
 
         {/* Text Stroke Section */}
