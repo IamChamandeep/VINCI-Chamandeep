@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vinci Auto-Editor</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#020205">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=DM+Sans:ital,wght@0,400;0,700;1,400;1,700&family=Bebas+Neue&family=Montserrat:wght@400;700;900&display=swap" rel="stylesheet">
@@ -50,61 +52,21 @@
             transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
         }
 
-        .liquid-button::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
-            opacity: 0;
-            transition: opacity 0.4s ease;
-            pointer-events: none;
-        }
-
-        .liquid-button:hover::before {
-            opacity: 1;
-        }
-
         .liquid-button:hover {
             transform: translateY(-2px);
             background: rgba(255, 255, 255, 0.06);
             border-color: rgba(255, 255, 255, 0.15);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-        }
-
-        .liquid-button:active {
-            transform: scale(0.97);
-            background: rgba(255, 255, 255, 0.02);
         }
 
         .btn-neon-blue {
             background: rgba(0, 163, 255, 0.1);
             border-color: rgba(0, 163, 255, 0.2);
-            box-shadow: 0 4px 15px rgba(0, 163, 255, 0.15),
-                        inset 0 1px 1px rgba(255, 255, 255, 0.1);
         }
         
         .btn-neon-blue:hover {
             background: rgba(0, 163, 255, 0.2);
             border-color: rgba(0, 163, 255, 0.4);
-            box-shadow: 0 10px 30px rgba(0, 163, 255, 0.3),
-                        0 0 15px rgba(0, 163, 255, 0.2);
-        }
-
-        .btn-neon-purple {
-            background: rgba(191, 0, 255, 0.1);
-            border-color: rgba(191, 0, 255, 0.2);
-            box-shadow: 0 4px 15px rgba(191, 0, 255, 0.15),
-                        inset 0 1px 1px rgba(255, 255, 255, 0.1);
-        }
-        
-        .btn-neon-purple:hover {
-            background: rgba(191, 0, 255, 0.2);
-            border-color: rgba(191, 0, 255, 0.4);
-            box-shadow: 0 10px 30px rgba(191, 0, 255, 0.3),
-                        0 0 15px rgba(191, 0, 255, 0.2);
+            box-shadow: 0 10px 30px rgba(0, 163, 255, 0.3);
         }
 
         input[type=range] {
@@ -120,9 +82,7 @@
             border-radius: 50%;
             background: #fff;
             cursor: pointer;
-            box-shadow: 0 0 15px var(--neon-blue);
             border: 2px solid var(--neon-blue);
-            transition: all 0.2s ease;
         }
     </style>
 <script type="importmap">
@@ -137,5 +97,16 @@
 </head>
 <body class="text-zinc-100 overflow-hidden">
     <div id="root"></div>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').then(registration => {
+                    console.log('SW registered: ', registration);
+                }).catch(registrationError => {
+                    console.log('SW registration failed: ', registrationError);
+                });
+            });
+        }
+    </script>
 </body>
 </html>

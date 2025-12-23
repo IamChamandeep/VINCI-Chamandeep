@@ -1,20 +1,21 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Vinci Auto-Editor Pro 🚀
 
-# Run and deploy your AI Studio app
+The easiest way to get your software (`.exe`) on Windows:
 
-This contains everything you need to run your app locally.
+## 🛠 Easy Build Method (Recommended)
 
-View your app in AI Studio: https://ai.studio/apps/drive/1SrCXG7cDTYVZ6qriYLGFvNiB53QPpRb7
+1. Ensure **Node.js** is installed.
+2. Simply **Double-click** on the file named `build_vince.bat`.
+3. Wait for the black window to finish its work.
+4. It will automatically open the `dist` folder where your `.exe` file is located.
 
-## Run Locally
+## Where is the EXE?
+After running the script, look in:
+`[Project Folder] -> dist -> VinciAutoEditor Setup 1.0.0.exe`
 
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Manual Commands (Alternative)
+If you prefer the terminal:
+```bash
+npm install
+npm run build-exe
+```

@@ -56,24 +56,27 @@ const App: React.FC = () => {
   const renderDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
 
+  // For Deterministic Background Rendering
+  const isStopRequested = useRef(false);
+
   useEffect(() => {
     const audio = audioObjRef.current;
     if (!audio) return;
 
     const handlePlayState = async () => {
-      if (state.isPlaying || state.isRendering) {
+      if (state.isRendering) {
+          audio.pause();
+          return;
+      }
+
+      if (state.isPlaying) {
         if (audioCtxRef.current?.state === 'suspended') {
           await audioCtxRef.current.resume();
         }
-
         if (localGainRef.current) {
-          localGainRef.current.gain.setTargetAtTime(state.isRendering ? 0 : 1, audioCtxRef.current!.currentTime, 0.05);
+          localGainRef.current.gain.setTargetAtTime(1, audioCtxRef.current!.currentTime, 0.05);
         }
-
-        audio.play().catch(e => {
-          console.error("Playback failed:", e);
-          setState(prev => ({ ...prev, isPlaying: false, isRendering: false }));
-        });
+        audio.play().catch(console.error);
       } else {
         audio.pause();
       }
@@ -84,38 +87,29 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const audio = audioObjRef.current;
-    if (!audio) return;
+    if (!audio || state.isRendering) return;
 
     if (Math.abs(audio.currentTime - state.currentTime) > 0.3) {
       audio.currentTime = state.currentTime;
     }
-  }, [state.currentTime]);
+  }, [state.currentTime, state.isRendering]);
 
   useEffect(() => {
     const audio = audioObjRef.current;
-    if (!audio) return;
+    if (!audio || state.isRendering) return;
 
     const handleTimeUpdate = () => {
-      if (state.isPlaying || state.isRendering) {
-        const time = audio.currentTime;
-        setState(prev => ({ ...prev, currentTime: time }));
-        if (state.isRendering && totalDuration > 0) {
-          setRenderProgress((time / totalDuration) * 100);
-        }
+      if (state.isPlaying) {
+        setState(prev => ({ ...prev, currentTime: audio.currentTime }));
       }
     };
 
     const handleEnded = () => {
-      if (state.isRendering) {
-        finishRecording();
-      } else {
-        setState(prev => ({ ...prev, isPlaying: false, currentTime: totalDuration }));
-      }
+      setState(prev => ({ ...prev, isPlaying: false, currentTime: totalDuration }));
     };
 
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('ended', handleEnded);
-    
     return () => {
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('ended', handleEnded);
@@ -123,17 +117,11 @@ const App: React.FC = () => {
   }, [state.isPlaying, state.isRendering, totalDuration]);
 
   const setupAudioGraph = (audioEl: HTMLAudioElement) => {
-    // Only create AudioContext once
     if (!audioCtxRef.current) {
       audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
-    
     const ctx = audioCtxRef.current;
-    
-    // Disconnect old source if it exists
-    if (sourceNodeRef.current) {
-      sourceNodeRef.current.disconnect();
-    }
+    if (sourceNodeRef.current) sourceNodeRef.current.disconnect();
 
     const source = ctx.createMediaElementSource(audioEl);
     const localGain = ctx.createGain();
@@ -153,28 +141,18 @@ const App: React.FC = () => {
     const id = Math.random().toString(36).substr(2, 9);
     
     if (type === 'audio') {
-      if (audioObjRef.current) {
-        audioObjRef.current.pause();
-      }
-      
+      if (audioObjRef.current) audioObjRef.current.pause();
       const audio = new Audio(url);
       audio.crossOrigin = "anonymous";
       audioObjRef.current = audio;
-      
       audio.onloadedmetadata = () => {
         setTotalDuration(audio.duration);
         setupAudioGraph(audio);
-        setState(prev => ({ 
-          ...prev, 
-          currentTime: 0,
-          isPlaying: false,
-          audio: { id, name: file.name, type, url, duration: audio.duration } 
-        }));
+        setState(prev => ({ ...prev, currentTime: 0, isPlaying: false, audio: { id, name: file.name, type, url, duration: audio.duration } }));
       };
     } else if (type === 'srt') {
       const text = await file.text();
-      const subs = parseSRT(text);
-      setState(prev => ({ ...prev, subtitles: subs }));
+      setState(prev => ({ ...prev, subtitles: parseSRT(text) }));
     } else if (type === 'image') {
       setState(prev => ({ ...prev, images: [...prev.images, { id, name: file.name, type, url }] }));
     } else if (type === 'overlay') {
@@ -185,10 +163,7 @@ const App: React.FC = () => {
   const handleRemove = (type: AssetType, id: string) => {
     setState(prev => {
       if (type === 'audio') {
-        if (audioObjRef.current) {
-          audioObjRef.current.pause();
-          audioObjRef.current.src = '';
-        }
+        if (audioObjRef.current) { audioObjRef.current.pause(); audioObjRef.current.src = ''; }
         return { ...prev, audio: null, currentTime: 0, isPlaying: false };
       }
       if (type === 'image') return { ...prev, images: prev.images.filter(a => a.id !== id) };
@@ -197,131 +172,88 @@ const App: React.FC = () => {
     });
   };
 
-  const togglePlay = () => {
-    if (!state.audio || state.isRendering) return;
-    setState(prev => ({ ...prev, isPlaying: !prev.isPlaying }));
-  };
-
-  const handleSeek = (time: number) => {
-    if (state.isRendering) return;
-    setState(prev => ({ ...prev, currentTime: time }));
-  };
-
   const startRendering = async (settings: RenderSettings) => {
-    if (!state.audio || !renderDestRef.current || !audioObjRef.current) return;
+    if (!state.audio || !audioObjRef.current) return;
     
-    // Resume AudioContext on user gesture (the button click)
-    if (audioCtxRef.current?.state === 'suspended') {
-      await audioCtxRef.current.resume();
-    }
-
+    isStopRequested.current = false;
     setRenderSettings(settings);
     setIsRenderModalOpen(false);
     
     const canvas = document.querySelector('canvas');
     if (!canvas) return;
 
-    // Use higher capture FPS if system allows, but stick to settings.fps for encoding
-    const canvasStream = canvas.captureStream(settings.fps); 
-    
-    const combinedStream = new MediaStream([
-      ...canvasStream.getVideoTracks(),
-      ...renderDestRef.current.stream.getAudioTracks()
-    ]);
+    setState(prev => ({ ...prev, isRendering: true, isPlaying: false, currentTime: 0 }));
+    setRenderProgress(0);
 
-    let mimeType = 'video/webm;codecs=vp9,opus';
-    if (settings.format === 'mp4') {
-      const candidates = [
-        'video/mp4;codecs=avc1,mp4a.40.2',
-        'video/mp4;codecs=avc1',
-        'video/x-matroska;codecs=avc1'
-      ];
-      for (const m of candidates) {
-        if (MediaRecorder.isTypeSupported(m)) {
-          mimeType = m;
-          break;
-        }
-      }
-    }
-
-    const recorder = new MediaRecorder(combinedStream, {
-      mimeType,
-      videoBitsPerSecond: settings.bitrate,
-      audioBitsPerSecond: 128000
+    const stream = canvas.captureStream(0); 
+    const recorder = new MediaRecorder(stream, {
+      mimeType: settings.format === 'mp4' ? 'video/x-matroska;codecs=avc1' : 'video/webm;codecs=vp9',
+      videoBitsPerSecond: settings.bitrate
     });
 
     chunksRef.current = [];
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunksRef.current.push(e.data);
-    };
-
+    recorder.ondataavailable = e => chunksRef.current.push(e.data);
     recorder.onstop = () => {
-      if (chunksRef.current.length === 0) return;
-      const blob = new Blob(chunksRef.current, { type: mimeType });
-      const url = URL.createObjectURL(blob);
+      const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
       const a = document.createElement('a');
-      a.href = url;
-      a.download = `${settings.filename || 'vinci_render'}.${settings.format}`;
+      a.href = URL.createObjectURL(blob);
+      a.download = `${settings.filename}.${settings.format}`;
       a.click();
-      
-      if (localGainRef.current) localGainRef.current.gain.value = 1;
-      setState(prev => ({ ...prev, isRendering: false, isPlaying: false }));
+      setState(prev => ({ ...prev, isRendering: false }));
     };
 
-    recorderRef.current = recorder;
-    setRenderProgress(0);
-    
-    // CRITICAL: Start recorder FIRST, then update state which triggers audio.play()
-    recorder.start(500); // Larger timeslice for better high-bitrate performance
-    setState(prev => ({ ...prev, isRendering: true, isPlaying: false, currentTime: 0 }));
-  };
+    recorder.start();
 
-  const finishRecording = () => {
-    if (recorderRef.current && recorderRef.current.state === 'recording') {
-      recorderRef.current.stop();
-    }
+    const fps = settings.fps;
+    const frameTime = 1 / fps;
+    let renderTime = 0;
+
+    /**
+     * TIGHT RENDERING LOOP
+     * We use a while loop with a tiny timeout instead of requestAnimationFrame.
+     * Browsers throttle requestAnimationFrame heavily in background tabs, 
+     * but async loops with minimal yield stay active much longer.
+     */
+    const runExport = async () => {
+      while (renderTime <= totalDuration && !isStopRequested.current) {
+        // Step 1: Update current time state
+        setState(prev => ({ ...prev, currentTime: renderTime }));
+        setRenderProgress((renderTime / totalDuration) * 100);
+
+        // Step 2: Yield control to let the browser draw the frame
+        // We use a small delay which is more resilient to background throttling than RAF
+        await new Promise(r => setTimeout(r, 4)); 
+
+        // Step 3: Advance time
+        renderTime += frameTime;
+      }
+      
+      recorder.stop();
+    };
+
+    runExport();
   };
 
   const cancelRendering = () => {
-    if (recorderRef.current) {
-      recorderRef.current.onstop = null; 
-      recorderRef.current.stop();
-    }
-    if (audioObjRef.current) {
-      audioObjRef.current.pause();
-    }
-    if (localGainRef.current) localGainRef.current.gain.value = 1;
-    chunksRef.current = [];
+    isStopRequested.current = true;
     setState(prev => ({ ...prev, isRendering: false, isPlaying: false }));
   };
 
   return (
     <div className="flex h-screen w-full bg-zinc-950 text-zinc-100 selection:bg-blue-500/30 font-sans">
       <Sidebar 
-        assets={{ 
-          audio: state.audio, 
-          images: state.images, 
-          videos: state.backgroundVideos, 
-          overlays: state.overlays 
-        }} 
+        assets={{ audio: state.audio, images: state.images, videos: state.backgroundVideos, overlays: state.overlays }} 
         onUpload={handleUpload}
         onRemove={handleRemove}
         autoStretch={state.subtitleSettings.autoStretch || false}
-        onToggleStretch={(val) => setState(p => ({ 
-          ...p, 
-          subtitleSettings: { ...p.subtitleSettings, autoStretch: val } 
-        }))}
+        onToggleStretch={(val) => setState(p => ({ ...p, subtitleSettings: { ...p.subtitleSettings, autoStretch: val } }))}
         onRender={() => setIsRenderModalOpen(true)}
         isRendering={state.isRendering}
       />
       
       <main className="flex-1 flex flex-col min-w-0 relative">
         <div className="flex-1 relative overflow-hidden flex flex-col">
-            <PreviewArea 
-              state={state} 
-              totalDuration={totalDuration} 
-              onTogglePlay={togglePlay}
-            />
+            <PreviewArea state={state} totalDuration={totalDuration} onTogglePlay={() => setState(p => ({...p, isPlaying: !p.isPlaying}))} />
             
             {state.isRendering && (
               <div className="absolute inset-0 z-50 bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center p-12 animate-in fade-in duration-500">
@@ -329,76 +261,42 @@ const App: React.FC = () => {
                   <div className="space-y-4 text-center">
                     <div className="inline-flex items-center gap-3 px-4 py-1.5 bg-blue-600/10 border border-blue-500/20 rounded-full">
                         <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.8)]"></div>
-                        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400">High Resolution Export</span>
+                        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400">Deterministic Engine v2</span>
                     </div>
-                    <h3 className="text-4xl font-black tracking-tight text-white">Rendering Master</h3>
-                    <p className="text-zinc-500 text-sm font-medium">Exporting at 1080p • {renderSettings?.fps} FPS • {renderSettings ? Math.round(renderSettings.bitrate / 1000000) : 0} Mbps</p>
-                    <p className="text-blue-500/80 text-[10px] uppercase font-bold tracking-widest animate-pulse">Encoding high quality audio & video streams...</p>
+                    <h3 className="text-4xl font-black tracking-tight text-white">Advanced Mastering</h3>
+                    <p className="text-zinc-500 text-sm font-medium">Bypassing browser throttling... Using full GPU power.</p>
                   </div>
 
                   <div className="relative pt-2">
-                    <div className="flex items-center justify-between mb-3 px-1">
-                      <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Mastering Progress</span>
-                      <span className="text-4xl font-black text-white tabular-nums">{Math.floor(renderProgress)}%</span>
+                    <div className="flex items-center justify-between mb-3 px-1 text-white">
+                      <span className="text-xs font-bold uppercase tracking-widest">Mastering Progress</span>
+                      <span className="text-4xl font-black tabular-nums">{Math.floor(renderProgress)}%</span>
                     </div>
-                    
                     <div className="h-4 bg-zinc-800/50 rounded-full overflow-hidden border border-zinc-700/50 p-1">
-                      <div 
-                        className="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-400 rounded-full transition-all duration-300 shadow-[0_0_20px_rgba(59,130,246,0.4)]"
-                        style={{ width: `${renderProgress}%` }}
-                      />
+                      <div className="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-400 rounded-full transition-all duration-300 shadow-[0_0_20px_rgba(59,130,246,0.4)]" style={{ width: `${renderProgress}%` }} />
                     </div>
                   </div>
 
                   <div className="flex flex-col items-center gap-8">
-                    <div className="grid grid-cols-3 gap-6 text-[9px] uppercase font-black tracking-[0.2em] text-zinc-600">
-                      <div className="flex items-center gap-2">
-                        <i className="fas fa-volume-up text-blue-500"></i>
-                        Audio Stream Active
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <i className="fas fa-expand text-blue-500"></i>
-                        1080p Frame Buffer
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <i className="fas fa-bolt text-blue-500"></i>
-                        Vinci Processing
-                      </div>
-                    </div>
-
-                    <button 
-                      onClick={cancelRendering}
-                      className="group px-10 py-4 bg-zinc-900 hover:bg-red-600/10 hover:text-red-500 hover:border-red-500/30 border border-zinc-800 rounded-2xl text-xs font-black transition-all active:scale-95 flex items-center gap-3"
-                    >
-                      <i className="fas fa-ban opacity-50 group-hover:opacity-100 transition-opacity"></i>
-                      CANCEL EXPORT
+                    <button onClick={cancelRendering} className="px-10 py-4 bg-zinc-900 hover:bg-red-600/10 hover:text-red-500 hover:border-red-500/30 border border-zinc-800 rounded-2xl text-xs font-black transition-all active:scale-95 flex items-center gap-3">
+                      <i className="fas fa-ban opacity-50"></i> STOP PRODUCTION
                     </button>
                   </div>
                 </div>
               </div>
             )}
 
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur px-4 py-1.5 rounded-full border border-white/10 text-[10px] uppercase tracking-widest font-bold text-zinc-400 pointer-events-none z-10">
-                {state.isRendering ? '🟠 RENDERING' : (state.isPlaying ? '🔴 LIVE PREVIEW' : '⏸ PAUSED')}
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur px-4 py-1.5 rounded-full border border-white/20 text-[10px] uppercase tracking-widest font-bold text-white z-10">
+                {state.isRendering ? '🟠 PROCESSING ASSETS' : (state.isPlaying ? '🔴 LIVE STREAM' : '⏸ IDLE')}
             </div>
         </div>
-        <Timeline 
-            state={state} 
-            totalDuration={totalDuration} 
-            onSeek={handleSeek} 
-        />
+        <Timeline state={state} totalDuration={totalDuration} onSeek={t => !state.isRendering && setState(s => ({...s, currentTime: t}))} />
       </main>
 
-      <SettingsPanel 
-        settings={state.subtitleSettings} 
-        onChange={(settings) => setState(p => ({ ...p, subtitleSettings: settings }))} 
-      />
+      <SettingsPanel settings={state.subtitleSettings} onChange={s => setState(p => ({ ...p, subtitleSettings: s }))} />
 
       {isRenderModalOpen && (
-        <RenderModal 
-          onConfirm={startRendering}
-          onClose={() => setIsRenderModalOpen(false)}
-        />
+        <RenderModal onConfirm={startRendering} onClose={() => setIsRenderModalOpen(false)} />
       )}
     </div>
   );

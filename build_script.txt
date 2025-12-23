@@ -1,0 +1,71 @@
+@echo off
+TITLE Vinci Auto-Editor Pro - Build System
+COLOR 0B
+
+echo ===========================================================
+echo    VINCI AUTO-EDITOR PRO : AUTOMATED WINDOWS BUILDER
+echo ===========================================================
+echo.
+
+:: 1. Node.js check
+node -v >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [ERROR] Node.js is NOT installed. Please install it from https://nodejs.org/
+    pause
+    exit /b
+)
+
+:: 2. Cleanup
+echo [1/5] Cleaning up old files...
+if exist "dist" rd /s /q "dist"
+if exist "build_temp" rd /s /q "build_temp"
+if exist "bundle.js" del bundle.js
+
+:: 3. Install Dependencies
+echo [2/5] Installing core dependencies (please wait)...
+call npm install --quiet
+call npm install --save-dev esbuild electron-builder --quiet
+
+:: 4. Bundle TSX to JS
+echo [3/5] Bundling React code for production...
+:: We use esbuild to turn index.tsx into a single JavaScript file
+call npx esbuild index.tsx --bundle --minify --outfile=bundle.js --format=esm --platform=browser --define:process.env.NODE_ENV=\"production\" --loader:.tsx=tsx --loader:.ts=ts
+if %errorlevel% neq 0 (
+    echo [ERROR] Bundling failed. Check your TSX code.
+    pause
+    exit /b
+)
+
+:: Create a temporary staging area
+mkdir build_temp
+copy index.html build_temp\index.html >nul
+copy bundle.js build_temp\bundle.js >nul
+copy main.js build_temp\main.js >nul
+copy package.json build_temp\package.json >nul
+copy metadata.json build_temp\metadata.json >nul
+copy manifest.json build_temp\manifest.json >nul
+
+:: Fix index.html to use the bundled file instead of the original TSX
+powershell -Command "(gc build_temp/index.html) -replace 'index.tsx', 'bundle.js' | Out-File -encoding ASCII build_temp/index.html"
+
+:: 5. Generate EXE
+echo [4/5] Compiling to Windows EXE...
+:: Running builder from root but pointing to the temp folder
+call npx electron-builder --win nsis --config.directories.output=dist --config.files=["build_temp/**/*"]
+
+:: 6. Success Check
+echo [5/5] Finalizing...
+if exist "dist\VinciAutoEditor Setup 1.0.0.exe" (
+    echo.
+    echo ===========================================================
+    echo   SUCCESS! Your software is ready.
+    echo   Location: dist\VinciAutoEditor Setup 1.0.0.exe
+    echo ===========================================================
+    start dist
+) else (
+    echo.
+    echo [ERROR] Build finished but EXE was not found in 'dist' folder.
+    echo Check for errors in the text above.
+)
+
+pause
